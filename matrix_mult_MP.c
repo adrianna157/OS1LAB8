@@ -5,23 +5,86 @@
 #include <xlocale.h>
 #include <stdlib.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <libgen.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <sys/wait.h>
+#include "matrix_mult_MP.h"
 #define BUFFER_SIZE 1000
 #define MAX_LINE 80
+#define DEFAULT_THREAD_COUNT 1
+#define DEFAULT_PROCESS_COUNT 1
+
+matrix_t left = {NULL, 0, 0, NULL};
+matrix_t right = {NULL, 0, 0, NULL};
+matrix_t output = {NULL, 0, 0, NULL};
+
+int threadCount = DEFAULT_THREAD_COUNT;
+int processCount = DEFAULT_PROCESS_COUNT;
 
 
-int main(int argc, char *argv[]){
+FILE *readFile(char *fileName);
+void oneDim(matrix_t *leftM, matrix_t *rightM, matrix_t *outputM);
 
+//Create Thread function
+//Pass -t, split threads (look at dot matrix)
 
-  char *filename = NULL;
-  FILE *iFile = stdin;
+//Create Processing function
+
+//shm_array.c this helps with multiprocesseing, shmopen, ftruncate, nmap
+//does serial calculation
+void oneDim(matrix_t *leftM, matrix_t *rightM, matrix_t *outputM)
+{
+  int i;
+  int j;
+  int k;
+  for (i = 0; i < leftM->rows; ++i)
+  {
+    for (j = 0; j < leftM->cols; ++j)
+    {
+      for (k = 0; k < leftM->cols; ++k)
+      {
+        outputM->data[rightM->cols * i + j] += leftM->data[leftM->cols * i + k] * rightM->data[rightM->cols * k + j];
+      }
+    }
+  }
+};
+
+//Reading in a file
+void readFile(matrix_t *mat)
+{
+  
+  FILE *file = NULL;
+  char *dot = strrchr(mat->file_name, '.');
+  short inputFilesZipped = false;
+  inputFilesZipped = strcmp(dot, ".gz") == 0;
+  if (inputFilesZipped)
+  {
+    char cmd[200];
+    sprintf(cmd, "gunzip -c %s", mat->file_name);
+    file = popen(cmd, "r");
+  }
+  else
+  {
+    file = fopen(mat->file_name, "r");
+  }
+  fscanf(file, "%d %d", &mat->rows, &mat->cols);
+  mat->data = malloc(mat->rows * mat->cols * sizeof(int32_t));
+
+  
+}
+
+int main(int argc, char *argv[])
+{
   int c;
-  int threadCount;
-  int processCount;
-  char *outname;
-  int outfile = STDOUT_FILENO;
+ 
   
 
   while ((c = getopt(argc, argv, "t:p:hvl:r:o:")) != -1)
@@ -29,21 +92,12 @@ int main(int argc, char *argv[]){
     switch (c)
     {
     case 't':
-      threadCount = optarg;
-      
-      if (optarg == NULL)
-      {
-        threadCount == 1;
-      }
-      exit(2);
+
+      threadCount = atoi(optarg);
+
       break;
     case 'p':
-      processCount = optarg;
-      
-      if (optarg == NULL)
-      {
-        processCount == 1;
-      }
+      processCount = atoi(optarg);
 
       break;
     case 'h':
@@ -57,8 +111,8 @@ int main(int argc, char *argv[]){
         printf("l: name of left matrix \n");
         printf("r: name of right matrix \n");
         printf("o: name of file to use as the output \n");
-
       }
+      exit(2);
       break;
 
     case 'v':
@@ -66,14 +120,16 @@ int main(int argc, char *argv[]){
       break;
 
     case 'l':
-        break;
+      left.file_name = optarg;
+      break;
 
     case 'r':
-        break;
+      right.file_name = optarg;
+      break;
 
     case 'o':
-        break;        
-
+      output.file_name = optarg;
+      break;
 
     case '?':
       fprintf(stderr,
@@ -82,66 +138,11 @@ int main(int argc, char *argv[]){
       return 1;
     default:
       exit(2);
-    }/* Ç */
-  }
-  {
-    char buff[BUFFER_SIZE] = {0};
-    char *token = NULL;
-    char delims[] = ",\n";
-
-    fgets(buff, BUFFER_SIZE, iFile);
-    while (fgets(buff, BUFFER_SIZE, iFile) != NULL)
-    {
-      memset(&s, 0, sizeof(s));size_t
-
-      token = strtok(buff, delims);
-      strcpy(s.id, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.fname, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.mname, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.lname, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.street, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.city, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.zip, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.country_code, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.email, token);
-
-      token = strtok(NULL, delims);
-      strcpy(s.phone, token);
-
-      write(outfile, &s, sizeof(s));
     }
   }
-  if (filename == NULL)
-  {
-    iFile = stdin;
-  }
-  else
-  {
-    iFile = fopen(filename, "r");
-    if (iFile == NULL)
-    {
-      fprintf(stderr, "File not opened. Input valid filename!");
-      exit(2);
-    }
-  }
+
+  //read file that is passed in the command line
+  readFile(&left);
 
   return 0;
-
 }
-
