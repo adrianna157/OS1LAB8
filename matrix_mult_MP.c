@@ -19,8 +19,9 @@
 #include "matrix_mult_MP.h"
 #define BUFFER_SIZE 1000
 #define MAX_LINE 80
+#define NUM_ELEMENTS 100
 #define DEFAULT_THREAD_COUNT 1
-#define DEFAULT_PROCESS_COUNT 1
+#define DEFAULT_PROCESS_COUNT 0
 
 matrix_t left = {NULL, 0, 0, NULL};
 matrix_t right = {NULL, 0, 0, NULL};
@@ -28,27 +29,28 @@ matrix_t output = {NULL, 0, 0, NULL};
 
 int threadCount = DEFAULT_THREAD_COUNT;
 int processCount = DEFAULT_PROCESS_COUNT;
+void *shared_void;
+int shmfd;
+char sharedMemName[100];
 
 void readFile(matrix_t *mat);
 void *oneDim(void *arg);
 void goMommaThreads(void);
-
-//Create Thread function
-//Pass -t, split threads (look at dot matrix)
+void printMatrix(void);
 
 //Create Processing function
 
 //shm_array.c this helps with multiprocesseing, shmopen, ftruncate, nmap
-//does serial calculation
 
 void goMommaThreads(void)
 {
   pthread_t *wthreads = calloc(threadCount, sizeof(pthread_t));
+  output.data = malloc(left.rows * right.cols * sizeof(int32_t));
   int tid;
 
   for (tid = 0; tid < threadCount; tid++)
   {
-    pthread_create(&wthreads[tid], NULL, oneDim, (void*)(size_t)tid);
+    pthread_create(&wthreads[tid], NULL, oneDim, (void *)(size_t)tid);
   }
   for (tid = 0; tid < threadCount; tid++)
   {
@@ -57,19 +59,42 @@ void goMommaThreads(void)
   free(wthreads);
 }
 
+void printMatrix(void)
+{
+
+  int j;
+  int k;
+  FILE *op = stdout;
+
+  if (output.file_name != NULL)
+  {
+    op = fopen(output.file_name, "w");
+  }
+  fprintf(op, "%d %d\n", left.rows, right.cols);
+  for (j = 0; j < left.rows; ++j)
+  {
+    for (k = 0; k < right.cols; ++k)
+    {
+      fprintf(op, "%d ", output.data[right.cols * j + k]);
+    }
+    fprintf(op, "\n");
+  }
+  fclose(op);
+}
+
+//does serial calculation
 void *oneDim(void *arg)
 {
   int i;
   int j;
   int k;
   long tid = (long)arg;
-  
 
-  for (i = tid; i < left.rows; i+=threadCount)
+  for (i = tid; i < left.rows; i += threadCount)
   {
     for (j = 0; j < left.cols; ++j)
     {
-      for (k = 0; k < left.cols; ++k)
+      for (k = 0; k < right.cols; ++k)
       {
         output.data[right.cols * i + j] += left.data[left.cols * i + k] * right.data[right.cols * k + j];
       }
@@ -77,8 +102,6 @@ void *oneDim(void *arg)
   }
 
   pthread_exit(EXIT_SUCCESS);
-
-
 };
 
 //Reading in a file
@@ -123,6 +146,10 @@ void readFile(matrix_t *mat)
 int main(int argc, char *argv[])
 {
   int c;
+  int shared_seg_size = -1;
+  int ret_val;
+  int process;
+  int child;
 
   while ((c = getopt(argc, argv, "t:p:hvl:r:o:")) != -1)
   {
@@ -182,6 +209,52 @@ int main(int argc, char *argv[])
   //read file that is passed in the command line
   readFile(&left);
   readFile(&right);
-  goMommaThreads();
+  if (processCount == 0)
+  {
+    goMommaThreads();
+  }
+  else
+  {
+    sprintf(sharedMemName, "/%s_%s", "matrix_mult", getenv("LOGNAME"));
+    // creating the shared memory object -- shm_open()
+    shmfd = shm_open(sharedMemName, (O_CREAT | O_RDWR), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+    // Adjust the mapped file size.
+    //   (make room for the whole segment to map) -- ftruncate()
+    shared_seg_size = (left.rows * right.cols * sizeof(int32_t));
+    ret_val = ftruncate(shmfd, shared_seg_size);
+
+    output.data = mmap(NULL, shared_seg_size, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0);
+
+    for (process = 0; process < processCount; process++)
+    {
+      child = fork();
+      if (child != 0)
+      {
+        continue;
+      }
+    
+      int i;
+      int j;
+      int k;
+
+      for (i = process; i < left.rows; i += processCount)
+      {
+        for (j = 0; j < left.cols; ++j)
+        {
+          for (k = 0; k < right.cols; ++k)
+          {
+            output.data[right.cols * i + j] += left.data[left.cols * i + k] * right.data[right.cols * k + j];
+          }
+        }
+      }
+      _exit(0);
+    }
+    while(wait(NULL) > 0);
+    
+    printMatrix();
+    munmap(output.data, ret_val);
+    shm_unlink(sharedMemName);
+  }
+
   return 0;
 }

@@ -1,5 +1,5 @@
 CC = gcc 
-CFLAGS = -g -Wall -Wshadow -Wunreachable-code -Wredundant-decls -Wmissing-declarations -Wold-style-definition -Wmissing-prototypes -Wdeclaration-after-statement -Wno-return-stack-address -Wuninitialized -Wextra
+CFLAGS = -g -Wall -pthread -Wshadow -Wunreachable-code -Wredundant-decls -Wmissing-declarations -Wold-style-definition -Wmissing-prototypes -Wdeclaration-after-statement -Wno-return-stack-address -Wuninitialized -Wextra
 PROG1 = matrix_mult_MP
 # PROG2 = primtMT
 
