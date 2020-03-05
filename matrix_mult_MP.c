@@ -29,9 +29,9 @@ matrix_t output = {NULL, 0, 0, NULL};
 int threadCount = DEFAULT_THREAD_COUNT;
 int processCount = DEFAULT_PROCESS_COUNT;
 
-
-FILE *readFile(char *fileName);
-void oneDim(matrix_t *leftM, matrix_t *rightM, matrix_t *outputM);
+void readFile(matrix_t *mat);
+void *oneDim(void *arg);
+void goMommaThreads(void);
 
 //Create Thread function
 //Pass -t, split threads (look at dot matrix)
@@ -40,27 +40,52 @@ void oneDim(matrix_t *leftM, matrix_t *rightM, matrix_t *outputM);
 
 //shm_array.c this helps with multiprocesseing, shmopen, ftruncate, nmap
 //does serial calculation
-void oneDim(matrix_t *leftM, matrix_t *rightM, matrix_t *outputM)
+
+void goMommaThreads(void)
+{
+  pthread_t *wthreads = calloc(threadCount, sizeof(pthread_t));
+  int tid;
+
+  for (tid = 0; tid < threadCount; tid++)
+  {
+    pthread_create(&wthreads[tid], NULL, oneDim, (void*)(size_t)tid);
+  }
+  for (tid = 0; tid < threadCount; tid++)
+  {
+    pthread_join(wthreads[tid], NULL);
+  }
+  free(wthreads);
+}
+
+void *oneDim(void *arg)
 {
   int i;
   int j;
   int k;
-  for (i = 0; i < leftM->rows; ++i)
+  long tid = (long)arg;
+  
+
+  for (i = tid; i < left.rows; i+=threadCount)
   {
-    for (j = 0; j < leftM->cols; ++j)
+    for (j = 0; j < left.cols; ++j)
     {
-      for (k = 0; k < leftM->cols; ++k)
+      for (k = 0; k < left.cols; ++k)
       {
-        outputM->data[rightM->cols * i + j] += leftM->data[leftM->cols * i + k] * rightM->data[rightM->cols * k + j];
+        output.data[right.cols * i + j] += left.data[left.cols * i + k] * right.data[right.cols * k + j];
       }
     }
   }
+
+  pthread_exit(EXIT_SUCCESS);
+
+
 };
 
 //Reading in a file
 void readFile(matrix_t *mat)
 {
-  
+  int i;
+  int j;
   FILE *file = NULL;
   char *dot = strrchr(mat->file_name, '.');
   short inputFilesZipped = false;
@@ -77,15 +102,27 @@ void readFile(matrix_t *mat)
   }
   fscanf(file, "%d %d", &mat->rows, &mat->cols);
   mat->data = malloc(mat->rows * mat->cols * sizeof(int32_t));
+  for (i = 0; i < mat->rows; i++)
+  {
+    for (j = 0; j < mat->cols; j++)
+    {
+      fscanf(file, "%d ", &mat->data[(i * mat->cols) + j]);
+    }
+  }
 
-  
+  if (inputFilesZipped)
+  {
+    pclose(file);
+  }
+  else
+  {
+    pclose(file);
+  }
 }
 
 int main(int argc, char *argv[])
 {
   int c;
- 
-  
 
   while ((c = getopt(argc, argv, "t:p:hvl:r:o:")) != -1)
   {
@@ -121,6 +158,7 @@ int main(int argc, char *argv[])
 
     case 'l':
       left.file_name = optarg;
+
       break;
 
     case 'r':
@@ -143,6 +181,7 @@ int main(int argc, char *argv[])
 
   //read file that is passed in the command line
   readFile(&left);
-
+  readFile(&right);
+  goMommaThreads();
   return 0;
 }
